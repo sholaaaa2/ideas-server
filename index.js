@@ -10,6 +10,8 @@ mongoose
         appInstance.start();
     })
     .catch((error) => {
+        console.log('test');
+        
         console.error("[DB] connection failed");
         console.error("name:", error.name);
         console.error("message:", error.message);
