@@ -1,4 +1,0 @@
-framework: node
-install: npm ci
-start: npm start
-port: 3000
