@@ -12,6 +12,6 @@ export const env = {
         expiresInRefresh: process.env.JWT_EXPIRES_IN_REFRESH || '7d'
     },
     mongo: {
-        url: process.env.DATABASE_URL || '',
+        url: process.env.MONGO_URL || '',
     }
 };
