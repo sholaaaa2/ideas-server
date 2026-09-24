@@ -18,8 +18,6 @@ const userSchema = new Schema(
 	{ timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
 
-userSchema.index({ name: 1 });
-
 const UserModel = model("user", userSchema);
 
 export default UserModel;
