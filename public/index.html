@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Ideas</title>
+    <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" defer></script>
+    <script src="/js/app.js" defer></script>
+</head>
+
+<body>
+    <header class="header" id="appHeader" hidden>
+        <div class="container header__inner">
+            <a class="logo" href="#">
+                IDEAS
+            </a>
+            <div class="header__actions">
+                <button class="button button--primary" id="addIdeaBtn" type="button">
+                    + Добавить идею
+                </button>
+                <button class="button button--secondary" id="logoutBtn" type="button">
+                    Выйти
+                </button>
+            </div>
+        </div>
+    </header>
+    <main class="main" id="appContent" hidden>
+        <div class="container">
+            <div class="page-heading">
+                <div>
+                    <h1>Идеи роликов</h1>
+                    <p>
+                        Референсы и сценарии для будущих видео.
+                    </p>
+                </div>
+                <div class="filters">
+                    <div class="filter-field filter-field--search">
+                        <input type="search" id="searchInput" placeholder="Поиск по названию...">
+                    </div>
+                    <div class="filter-field">
+                        <input type="search" id="locationFilter" placeholder="Локация...">
+                    </div>
+                    <div class="filter-field">
+                        <select id="difficultyFilter">
+                            <option value="">
+                                Сложность(-)
+                            </option>
+                            <option value="low">
+                                Low
+                            </option>
+                            <option value="mid">
+                                Mid
+                            </option>
+                            <option value="high">
+                                High
+                            </option>
+                        </select>
+                    </div>
+                    <button class="button button--secondary" id="resetFilters" type="button">
+                        Сбросить
+                    </button>
+                </div>
+            </div>
+            <div class="card-grid" id="ideasGrid"></div>
+            <div class="empty-state" id="emptyState" hidden>
+                <div class="empty-state__icon">
+                    ✦
+                </div>
+                <h2>
+                    Идей пока нет
+                </h2>
+                <p>
+                    Добавь первую идею ролика.
+                </p>
+                <button class="button button--primary" id="emptyAddBtn" type="button">
+                    Добавить идею
+                </button>
+            </div>
+        </div>
+    </main>
+    <div class="modal modal--locked" id="loginModal" aria-hidden="true">
+        <div class="modal__backdrop"></div>
+        <div class="modal__dialog modal__dialog--small">
+            <div class="auth-logo">
+                IDEAS
+            </div>
+            <h2 class="modal__title">
+                Авторизация
+            </h2>
+            <p class="modal__subtitle">
+                Войди в аккаунт, чтобы увидеть идеи.
+            </p>
+            <form id="loginForm">
+                <div class="form-field">
+                    <label for="loginName">
+                        Логин
+                    </label>
+                    <input id="loginName" name="name" type="text" autocomplete="username" required>
+                </div>
+                <div class="form-field">
+                    <label for="loginPassword">
+                        Пароль
+                    </label>
+                    <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+                </div>
+                <div class="form-error" id="loginError"></div>
+                <button class="button button--primary button--wide" type="submit">
+                    Войти
+                </button>
+            </form>
+        </div>
+    </div>
+    <div class="modal" id="ideaModal" aria-hidden="true">
+        <div class="modal__backdrop" data-close-modal></div>
+        <div class="modal__dialog">
+            <button class="modal__close" type="button" data-close-modal>
+                ×
+            </button>
+            <h2 class="modal__title">
+                Новая идея
+            </h2>
+            <form id="createIdeaForm">
+                <div class="form-field">
+                    <label>
+                        Название идеи
+                    </label>
+                    <input name="title" type="text" required placeholder="Например: Реакция прохожих">
+                </div>
+                <div class="form-field">
+                    <label>
+                        Ссылка на референс
+                    </label>
+                    <input name="url" type="url" placeholder="Instagram, TikTok или YouTube">
+                </div>
+                <div class="scripts-section">
+                    <div class="scripts-section__header">
+                        <div>
+                            <h3>Сценарии</h3>
+                            <p>
+                                Можно добавить любое количество.
+                            </p>
+                        </div>
+                        <button class="button button--outline button--small add-script" type="button">
+                            + Сценарий
+                        </button>
+                    </div>
+                    <div class="scripts-editor" data-scripts-editor></div>
+                </div>
+                <div class="form-error" id="createIdeaError"></div>
+                <div class="modal__footer">
+                    <button class="button button--secondary" type="button" data-close-modal>
+                        Отмена
+                    </button>
+                    <button class="button button--primary" type="submit">
+                        Создать
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="modal" id="detailsModal" aria-hidden="true">
+        <div class="modal__backdrop" data-close-modal></div>
+        <div class="modal__dialog modal__dialog--large">
+            <button class="modal__close" type="button" data-close-modal>
+                ×
+            </button>
+            <div id="ideaDetailsView"></div>
+            <div id="ideaEditView" hidden></div>
+        </div>
+    </div>
+    <div class="modal" id="deleteModal" aria-hidden="true">
+        <div class="modal__backdrop"></div>
+        <div class="modal__dialog modal__dialog--tiny">
+            <div class="danger-icon">
+                !
+            </div>
+            <h2 class="modal__title modal__title--center">
+                Удалить идею?
+            </h2>
+            <p class="modal__subtitle modal__subtitle--center">
+                Это действие нельзя будет отменить.
+            </p>
+            <div class="confirm-actions">
+                <button class="button button--secondary" id="cancelDeleteBtn" type="button">
+                    Отмена
+                </button>
+                <button class="button button--danger" id="confirmDeleteBtn" type="button">
+                    Удалить
+                </button>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
