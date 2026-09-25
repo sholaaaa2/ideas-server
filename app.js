@@ -77,7 +77,7 @@ class App {
         this.app.use(errorHandler);
     }
     async start() {
-        this.app.listen(env.port, () => {
+        this.app.listen(env.port, '0.0.0.0', () => {
             console.log(`[server] listening on port ${env.port} (${env.nodeEnv})`);
         });
     }
