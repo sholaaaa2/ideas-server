@@ -5,9 +5,14 @@ on:
     branches:
       - main
 
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Deploy via SSH
@@ -17,8 +22,13 @@ jobs:
           username: ${{ secrets.ORACLE_USER }}
           key: ${{ secrets.ORACLE_SSH_KEY }}
           script: |
+            set -e
+
             cd /home/ubuntu/ideas-server
-            git pull origin main
-            npm install
+
+            git fetch origin main
+            git reset --hard origin/main
+
+            npm ci --omit=dev
+
             pm2 restart ideas-server
-            pm2 save
