@@ -36,6 +36,7 @@ class App {
                             "https://www.tiktok.com",
                         ],
                         connectSrc: ["'self'",],
+                        "upgrade-insecure-requests": null,
                     },
                 },
             })
