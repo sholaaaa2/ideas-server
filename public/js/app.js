@@ -1,6 +1,5 @@
 $(function () {
     "use strict";
-
     const API = "/api";
 
     const state = {
