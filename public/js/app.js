@@ -1,6 +1,8 @@
 $(function () {
     "use strict";
+
     const API = "/api";
+
     const state = {
         token:
             localStorage.getItem(
@@ -42,6 +44,7 @@ $(function () {
 
     function saveToken(token) {
         state.token = token || "";
+
         if (state.token) {
             localStorage.setItem("ideas_access_token", state.token);
         } else {
@@ -50,21 +53,36 @@ $(function () {
     }
 
     function getErrorMessage(xhr) {
-        return (xhr?.responseJSON?.errors?.[0] || xhr?.responseJSON?.message || "Произошла ошибка");
+        return (
+            xhr?.responseJSON?.errors?.[0] ||
+            xhr?.responseJSON?.message ||
+            "Сталася помилка"
+        );
     }
 
     function request(options) {
         const ajaxOptions = {
             url: `${API}${options.url}`,
             method: options.method || "GET",
-            contentType: options.contentType === false ? false : "application/json",
-            processData: options.processData === false ? false : true,
-            xhrFields: { withCredentials: true },
+            contentType:
+                options.contentType === false
+                    ? false
+                    : "application/json",
+            processData:
+                options.processData === false
+                    ? false
+                    : true,
+            xhrFields: {
+                withCredentials: true
+            },
             headers: {},
         };
 
         if (options.data !== undefined) {
-            ajaxOptions.data = ajaxOptions.contentType === "application/json" ? JSON.stringify(options.data) : options.data;
+            ajaxOptions.data =
+                ajaxOptions.contentType === "application/json"
+                    ? JSON.stringify(options.data)
+                    : options.data;
         }
 
         if (state.token && options.auth !== false) {
@@ -81,56 +99,69 @@ $(function () {
             auth: false,
         }).then(function (response) {
             const token = response?.data?.token;
+
             if (!token) {
                 return $.Deferred().reject().promise();
             }
 
             saveToken(token);
+
             return token;
         });
     }
 
     function authorizedRequest(options) {
-        return request(options).catch(
-            function (xhr) {
-                if (xhr.status !== 401) {
-                    return $.Deferred().reject(xhr).promise();
-                }
-                return refreshAccessToken().then(function () {
+        return request(options).catch(function (xhr) {
+            if (xhr.status !== 401) {
+                return $.Deferred().reject(xhr).promise();
+            }
+
+            return refreshAccessToken()
+                .then(function () {
                     return request(options);
-                }).catch(function () {
+                })
+                .catch(function () {
                     saveToken("");
                     setAuthenticated(false);
+
                     return $.Deferred().reject(xhr).promise();
                 });
-            }
-        );
+        });
     }
 
     $("#loginForm").on("submit", function (event) {
         event.preventDefault();
+
         $("#loginError").text("");
 
         const payload = {
             name: $("#loginName").val().trim(),
             password: $("#loginPassword").val(),
         };
+
         request({
             url: "/user/login",
             method: "POST",
             auth: false,
             data: payload,
-        }).then(function (response) {
-            const token = response?.data?.token;
-            if (!token) throw new Error("Token missing");
+        })
+            .then(function (response) {
+                const token = response?.data?.token;
 
-            saveToken(token);
-            setAuthenticated(true);
-            $("#loginForm")[0].reset();
-            loadIdeas();
-        }).catch(function (xhr) {
-            $("#loginError").text(getErrorMessage(xhr));
-        });
+                if (!token) {
+                    throw new Error("Token missing");
+                }
+
+                saveToken(token);
+                setAuthenticated(true);
+
+                $("#loginForm")[0].reset();
+
+                loadIdeas();
+            })
+            .catch(function (xhr) {
+                $("#loginError").text(getErrorMessage(xhr));
+            });
     });
 
     $("#logoutBtn").on("click", function () {
@@ -140,8 +171,11 @@ $(function () {
             auth: false,
         }).always(function () {
             saveToken("");
+
             state.ideas = [];
+
             $("#ideasGrid").empty();
+
             setAuthenticated(false);
         });
     });
@@ -150,7 +184,9 @@ $(function () {
         const search = $("#searchInput").val().trim();
         const location = $("#locationFilter").val().trim();
         const difficulty = $("#difficultyFilter").val();
+
         const params = new URLSearchParams();
+
         params.set("limit", "100");
 
         if (search) {
@@ -160,6 +196,7 @@ $(function () {
         if (location) {
             params.set("location", location);
         }
+
         if (difficulty) {
             params.set("difficulty", difficulty);
         }
@@ -167,564 +204,1149 @@ $(function () {
         authorizedRequest({
             url: `/idea/get?${params.toString()}`,
             method: "GET",
-        }).then(function (response) {
-            state.ideas = response.objects || [];
-            renderIdeas();
-        }).catch(function (xhr) {
-            if (xhr.status !== 401) {
-                console.error(getErrorMessage(xhr));
-            }
-        });
+        })
+            .then(function (response) {
+                state.ideas = response.objects || [];
+
+                renderIdeas();
+            })
+            .catch(function (xhr) {
+                if (xhr.status !== 401) {
+                    console.error(getErrorMessage(xhr));
+                }
+            });
     }
 
     function renderIdeas() {
         const $grid = $("#ideasGrid");
+
         $grid.empty();
-        $("#emptyState").prop("hidden", state.ideas.length !== 0);
 
-        state.ideas.forEach(
-            function (idea) {
-                const $card = $("<article>", { class: "idea-card" });
-                const $media = $("<div>", { class: "idea-card__media" });
-
-                if (idea.url) {
-                    const $iframe = $("<iframe>", {
-                        src: idea.url,
-                        title: idea.title || "Video reference",
-                        loading: "lazy",
-                        allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
-                        allowfullscreen: "allowfullscreen",
-                    });
-
-                    $media.append($iframe);
-                } else {
-                    $media.html(`<div class="idea-card__placeholder"><div class="idea-card__placeholder-icon">▶</div><div>Без референса</div></div>`);
-                }
-
-                const $body = $("<div>", { class: "idea-card__body", });
-                const $title = $("<h2>", { class: "idea-card__title", }).text(idea.title || "Без названия");
-                const $button = $("<button>", { class: "button button--primary", type: "button", text: "Подробнее", }).attr("data-idea-id", idea._id);
-
-                $body.append($title, $button);
-                $card.append($media, $body);
-                $grid.append($card);
-            }
+        $("#emptyState").prop(
+            "hidden",
+            state.ideas.length !== 0
         );
+
+        state.ideas.forEach(function (idea) {
+            const $card = $("<article>", {
+                class: "idea-card"
+            });
+
+            const $media = $("<div>", {
+                class: "idea-card__media"
+            });
+
+            if (idea.url) {
+                const $iframe = $("<iframe>", {
+                    src: idea.url,
+                    title:
+                        idea.title ||
+                        "Відеореференс",
+                    loading: "lazy",
+                    allow:
+                        "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
+                    allowfullscreen:
+                        "allowfullscreen",
+                });
+
+                $media.append($iframe);
+            } else {
+                $media.html(`
+                    <div class="idea-card__placeholder">
+                        <div class="idea-card__placeholder-icon">▶</div>
+                        <div>Без референсу</div>
+                    </div>
+                `);
+            }
+
+            const $body = $("<div>", {
+                class: "idea-card__body",
+            });
+
+            const $title = $("<h2>", {
+                class: "idea-card__title",
+            }).text(
+                idea.title || "Без назви"
+            );
+
+            const $button = $("<button>", {
+                class: "button button--primary",
+                type: "button",
+                text: "Детальніше",
+            }).attr(
+                "data-idea-id",
+                idea._id
+            );
+
+            $body.append(
+                $title,
+                $button
+            );
+
+            $card.append(
+                $media,
+                $body
+            );
+
+            $grid.append($card);
+        });
     }
 
     function createScriptEditor(script = {}, index = 0) {
-        const $block = $("<div>", { class: "script-editor" });
+        const $block = $("<div>", {
+            class: "script-editor"
+        });
+
         $block.html(`
             <div class="script-editor__header">
                 <div class="script-editor__title">
-                    Сценарий ${index + 1}
+                    Сценарій ${index + 1}
                 </div>
+
                 <button type="button" class="remove-script">
-                    Удалить сценарий
+                    Видалити сценарій
                 </button>
             </div>
+
             <div class="form-field">
                 <label>
-                    Сценарий
+                    Сценарій
                 </label>
+
                 <textarea
                     data-field="scenario"
                     required
-                    placeholder="Полный текст сценария..."
+                    placeholder="Повний текст сценарію..."
                 ></textarea>
             </div>
+
             <div class="script-fields-grid">
-    <div class="form-field">
-        <label>
-            Инвентарь
-        </label>
-        <input
-            type="text"
-            data-field="equipment"
-            placeholder="Маска, машина..."
-        >
-    </div>
-    <div class="form-field">
-        <label>
-            Актёры
-        </label>
-        <input
-            type="text"
-            data-field="actors"
-            placeholder="1 мужчина, 1 девушка..."
-        >
-    </div>
-    <div class="form-field">
-        <label>
-            Устройство
-        </label>
-        <input
-            type="text"
-            data-field="device"
-            placeholder="iPhone, Sony..."
-        >
-    </div>
-    <div class="form-field">
-        <label>
-            Локация
-        </label>
-        <input
-            type="text"
-            data-field="location"
-            placeholder="Улица, офис, студия..."
-        >
-    </div>
-    <div class="form-field">
-        <label>
-            Сложность
-        </label>
-        <select
-            data-field="difficulty"
-        >
-            <option value="">
-                Не указана
-            </option>
-            <option value="low">
-                Low
-            </option>
-            <option value="mid">
-                Mid
-            </option>
-            <option value="high">
-                High
-            </option>
-        </select>
-    </div>
-</div>
+                <div class="form-field">
+                    <label>
+                        Інвентар
+                    </label>
+
+                    <input
+                        type="text"
+                        data-field="equipment"
+                        placeholder="Маска, машина..."
+                    >
+                </div>
+
+                <div class="form-field">
+                    <label>
+                        Актори
+                    </label>
+
+                    <input
+                        type="text"
+                        data-field="actors"
+                        placeholder="1 чоловік, 1 дівчина..."
+                    >
+                </div>
+
+                <div class="form-field">
+                    <label>
+                        Пристрій
+                    </label>
+
+                    <input
+                        type="text"
+                        data-field="device"
+                        placeholder="iPhone, Sony..."
+                    >
+                </div>
+
+                <div class="form-field">
+                    <label>
+                        Локація
+                    </label>
+
+                    <input
+                        type="text"
+                        data-field="location"
+                        placeholder="Вулиця, офіс, студія..."
+                    >
+                </div>
+
+                <div class="form-field">
+                    <label>
+                        Складність
+                    </label>
+
+                    <select data-field="difficulty">
+                        <option value="">
+                            Не вказана
+                        </option>
+
+                        <option value="low">
+                            Low
+                        </option>
+
+                        <option value="mid">
+                            Mid
+                        </option>
+
+                        <option value="high">
+                            High
+                        </option>
+                    </select>
+                </div>
+            </div>
         `);
 
-        $block.find('[data-field="scenario"]').val(script.scenario || "");
-        $block.find('[data-field="equipment"]').val(script.equipment || "");
-        $block.find('[data-field="actors"]').val(script.actors || "");
-        $block.find('[data-field="device"]').val(script.device || "");
-        $block.find('[data-field="location"]').val(script.location || "");
-        $block.find('[data-field="difficulty"]').val(script.difficulty || "");
+        $block
+            .find('[data-field="scenario"]')
+            .val(script.scenario || "");
+
+        $block
+            .find('[data-field="equipment"]')
+            .val(script.equipment || "");
+
+        $block
+            .find('[data-field="actors"]')
+            .val(script.actors || "");
+
+        $block
+            .find('[data-field="device"]')
+            .val(script.device || "");
+
+        $block
+            .find('[data-field="location"]')
+            .val(script.location || "");
+
+        $block
+            .find('[data-field="difficulty"]')
+            .val(script.difficulty || "");
 
         return $block;
     }
 
     function renumberScripts($editor) {
-        $editor.find(".script-editor").each(function (index) {
-            $(this).find(".script-editor__title").text(`Сценарий ${index + 1}`);
-        });
+        $editor
+            .find(".script-editor")
+            .each(function (index) {
+                $(this)
+                    .find(".script-editor__title")
+                    .text(
+                        `Сценарій ${index + 1}`
+                    );
+            });
     }
 
     function addScript($editor, script = {}) {
-        const index = $editor.find(".script-editor").length;
-        $editor.append(createScriptEditor(script, index));
+        const index =
+            $editor.find(
+                ".script-editor"
+            ).length;
+
+        $editor.append(
+            createScriptEditor(
+                script,
+                index
+            )
+        );
     }
 
     function collectScripts($editor) {
         const scripts = [];
-        $editor.find(".script-editor").each(function () {
-            const $block = $(this);
-            const scenario = $block.find('[data-field="scenario"]').val().trim();
-            const equipment = $block.find('[data-field="equipment"]').val().trim();
-            const actors = $block.find('[data-field="actors"]').val().trim();
-            const device = $block.find('[data-field="device"]').val().trim();
-            const location = $block.find('[data-field="location"]').val().trim();
-            const difficulty = $block.find('[data-field="difficulty"]').val();
-            if (scenario || equipment || actors || device || location || difficulty) {
-                scripts.push({
-                    scenario,
-                    equipment,
-                    actors,
-                    device,
-                    location,
-                    difficulty,
-                });
-            }
-        });
+
+        $editor
+            .find(".script-editor")
+            .each(function () {
+                const $block = $(this);
+
+                const scenario =
+                    $block
+                        .find(
+                            '[data-field="scenario"]'
+                        )
+                        .val()
+                        .trim();
+
+                const equipment =
+                    $block
+                        .find(
+                            '[data-field="equipment"]'
+                        )
+                        .val()
+                        .trim();
+
+                const actors =
+                    $block
+                        .find(
+                            '[data-field="actors"]'
+                        )
+                        .val()
+                        .trim();
+
+                const device =
+                    $block
+                        .find(
+                            '[data-field="device"]'
+                        )
+                        .val()
+                        .trim();
+
+                const location =
+                    $block
+                        .find(
+                            '[data-field="location"]'
+                        )
+                        .val()
+                        .trim();
+
+                const difficulty =
+                    $block
+                        .find(
+                            '[data-field="difficulty"]'
+                        )
+                        .val();
+
+                if (
+                    scenario ||
+                    equipment ||
+                    actors ||
+                    device ||
+                    location ||
+                    difficulty
+                ) {
+                    scripts.push({
+                        scenario,
+                        equipment,
+                        actors,
+                        device,
+                        location,
+                        difficulty,
+                    });
+                }
+            });
 
         return scripts;
     }
 
-    $(document).on("click", ".add-script", function () {
-        const $editor = $(this).closest("form").find("[data-scripts-editor]");
-        addScript($editor);
-    });
+    $(document).on(
+        "click",
+        ".add-script",
+        function () {
+            const $editor =
+                $(this)
+                    .closest("form")
+                    .find(
+                        "[data-scripts-editor]"
+                    );
 
-    $(document).on("click", ".remove-script", function () {
-        const $editor = $(this).closest("[data-scripts-editor]");
-        $(this).closest(".script-editor").remove();
-        renumberScripts($editor);
-    });
+            addScript($editor);
+        }
+    );
+
+    $(document).on(
+        "click",
+        ".remove-script",
+        function () {
+            const $editor =
+                $(this)
+                    .closest(
+                        "[data-scripts-editor]"
+                    );
+
+            $(this)
+                .closest(".script-editor")
+                .remove();
+
+            renumberScripts($editor);
+        }
+    );
 
     function openCreateIdea() {
-        const $form = $("#createIdeaForm");
+        const $form =
+            $("#createIdeaForm");
+
         $form[0].reset();
+
         $("#createIdeaError").text("");
-        const $editor = $form.find("[data-scripts-editor]");
+
+        const $editor =
+            $form.find(
+                "[data-scripts-editor]"
+            );
+
         $editor.empty();
+
         addScript($editor);
+
         showModal("#ideaModal");
     }
 
-    $("#addIdeaBtn, #emptyAddBtn").on("click", openCreateIdea);
-    $("#createIdeaForm").on("submit", function (event) {
-        event.preventDefault();
-        const $form = $(this);
-        const payload = {
-            title: $form.find('[name="title"]').val().trim(),
-            url: $form.find('[name="url"]').val().trim(),
-            scripts: collectScripts($form.find("[data-scripts-editor]")),
-        };
-        $("#createIdeaError").text("");
-        authorizedRequest({
-            url: "/idea/create",
-            method: "POST",
-            data: payload,
-        }).then(function () {
-            closeModal("#ideaModal");
-            loadIdeas();
-        }).catch(function (xhr) {
-            $("#createIdeaError").text(getErrorMessage(xhr));
-        });
-    });
+    $("#addIdeaBtn, #emptyAddBtn").on(
+        "click",
+        openCreateIdea
+    );
+
+    $("#createIdeaForm").on(
+        "submit",
+        function (event) {
+            event.preventDefault();
+
+            const $form = $(this);
+
+            const payload = {
+                title:
+                    $form
+                        .find(
+                            '[name="title"]'
+                        )
+                        .val()
+                        .trim(),
+
+                url:
+                    $form
+                        .find(
+                            '[name="url"]'
+                        )
+                        .val()
+                        .trim(),
+
+                scripts:
+                    collectScripts(
+                        $form.find(
+                            "[data-scripts-editor]"
+                        )
+                    ),
+            };
+
+            $("#createIdeaError").text("");
+
+            authorizedRequest({
+                url: "/idea/create",
+                method: "POST",
+                data: payload,
+            })
+                .then(function () {
+                    closeModal(
+                        "#ideaModal"
+                    );
+
+                    loadIdeas();
+                })
+                .catch(function (xhr) {
+                    $("#createIdeaError").text(
+                        getErrorMessage(xhr)
+                    );
+                });
+        }
+    );
 
     function findIdea(id) {
-        return state.ideas.find((idea) => idea._id === id);
-    }
-
-    $(document).on("click", "[data-idea-id]", function () {
-        const id = $(this).attr("data-idea-id");
-        openIdeaDetails(id);
-    });
-
-    function openIdeaDetails(id) {
-        const idea = findIdea(id);
-        if (!idea) return;
-        state.currentIdeaId = idea._id;
-        $("#ideaEditView").prop("hidden", true).empty();
-        $("#ideaDetailsView").prop("hidden", false);
-        renderIdeaDetails(idea);
-        showModal("#detailsModal");
-    }
-
-    function renderIdeaDetails(idea) {
-        const scripts = idea.scripts || [];
-        let videoHtml = `<div class="idea-details__no-video">Референс не добавлен</div>`;
-
-        if (idea.url) {
-            const originButton = idea.url_origin ? `<a href="${escapeHtml(idea.url_origin)}" target="_blank" rel="noopener noreferrer" class="original-link">Открыть оригинал ↗</a>` : "";
-            videoHtml = `<div class="idea-details__video"><iframe src="${escapeHtml(idea.url)}" frameborder="0" allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"></iframe></div><div class="idea-details__video-actions">${originButton}</div>`;
-        }
-
-        let scriptsHtml = "";
-        if (!scripts.length) {
-            scriptsHtml = `<p style="color:var(--text-soft)">Сценарии ещё не добавлены.</p>`;
-        } else {
-            scriptsHtml = scripts.map((script, index) => `
-                    <div class="scenario">
-                        <button type="button" class="scenario__header">
-                            <span>
-                                Сценарий ${index + 1}
-                            </span>
-                            <span class="scenario__arrow">
-                                ↓
-                            </span>
-                        </button>
-                        <div class="scenario__body">
-                            <p>${escapeHtml(script.scenario || "")}</p>
-                            <div class="scenario-meta">
-                                <div class="scenario-meta__item">
-                                    <span class="scenario-meta__label">
-                                        Инвентарь
-                                    </span>
-                                    <span class="scenario-meta__value">
-                                        ${escapeHtml(script.equipment || "—")}
-                                    </span>
-                                </div>
-                                <div class="scenario-meta__item">
-                                    <span class="scenario-meta__label">
-                                        Актёры
-                                    </span>
-                                    <span class="scenario-meta__value">
-                                        ${escapeHtml(script.actors || "—")}
-                                    </span>
-                                </div>
-                                <div class="scenario-meta__item">
-                                    <span class="scenario-meta__label">
-                                        Устройство
-                                    </span>
-                                    <span class="scenario-meta__value">
-                                        ${escapeHtml(script.device || "—")}
-                                    </span>
-                                </div>
-                                <div class="scenario-meta__item">
-                                    <span class="scenario-meta__label">
-                                        Локация
-                                    </span>
-                                    <span class="scenario-meta__value">
-                                        ${escapeHtml(script.location || "—")}
-                                    </span>
-                                </div>
-                                <div class="scenario-meta__item">
-                                    <span class="scenario-meta__label">
-                                        Сложность
-                                    </span>
-                                    <span class="difficulty-badge difficulty-badge--${escapeHtml(script.difficulty || "none")}">
-                                        ${escapeHtml(script.difficulty || "—")}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>`
-            ).join("");
-        }
-        $("#ideaDetailsView").html(`
-                <h2 class="modal__title">
-                    ${escapeHtml(idea.title)}
-                </h2>
-                ${videoHtml}
-                <div class="scripts-section">
-                    <h3>
-                        Сценарии
-                    </h3>
-                    <div class="scenarios-list">
-                        ${scriptsHtml}
-                    </div>
-                </div>
-                <div class="idea-details__actions">
-                    <button
-                        type="button"
-                        class="button button--danger"
-                        id="deleteIdeaBtn"
-                    >
-                        Удалить
-                    </button>
-                    <button
-                        type="button"
-                        class="button button--primary"
-                        id="editIdeaBtn"
-                    >
-                        Редактировать
-                    </button>
-                </div>`
+        return state.ideas.find(
+            (idea) => idea._id === id
         );
     }
 
-    $(document).on("click", ".scenario__header", function () {
-        const $scenario = $(this).closest(".scenario");
-        $scenario.toggleClass("is-open");
-        $scenario.find(".scenario__body").stop(true, true).slideToggle(180);
-    });
+    $(document).on(
+        "click",
+        "[data-idea-id]",
+        function () {
+            const id =
+                $(this).attr(
+                    "data-idea-id"
+                );
 
-    $(document).on("click", "#editIdeaBtn", function () {
-        const idea = findIdea(state.currentIdeaId);
-        if (!idea) return;
-        renderEditIdea(idea);
-    });
+            openIdeaDetails(id);
+        }
+    );
+
+    function openIdeaDetails(id) {
+        const idea = findIdea(id);
+
+        if (!idea) {
+            return;
+        }
+
+        state.currentIdeaId =
+            idea._id;
+
+        $("#ideaEditView")
+            .prop(
+                "hidden",
+                true
+            )
+            .empty();
+
+        $("#ideaDetailsView").prop(
+            "hidden",
+            false
+        );
+
+        renderIdeaDetails(idea);
+
+        showModal(
+            "#detailsModal"
+        );
+    }
+
+    function renderIdeaDetails(idea) {
+        const scripts =
+            idea.scripts || [];
+
+        let videoHtml = `
+            <div class="idea-details__no-video">
+                Референс не додано
+            </div>
+        `;
+
+        if (idea.url) {
+            const originButton =
+                idea.url_origin
+                    ? `
+                        <a
+                            href="${escapeHtml(idea.url_origin)}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="original-link"
+                        >
+                            Відкрити оригінал ↗
+                        </a>
+                    `
+                    : "";
+
+            videoHtml = `
+                <div class="idea-details__video">
+                    <iframe
+                        src="${escapeHtml(idea.url)}"
+                        frameborder="0"
+                        allowfullscreen
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    ></iframe>
+                </div>
+
+                <div class="idea-details__video-actions">
+                    ${originButton}
+                </div>
+            `;
+        }
+
+        let scriptsHtml = "";
+
+        if (!scripts.length) {
+            scriptsHtml = `
+                <p style="color:var(--text-soft)">
+                    Сценарії ще не додані.
+                </p>
+            `;
+        } else {
+            scriptsHtml = scripts
+                .map(
+                    (script, index) => `
+                        <div class="scenario">
+                            <button
+                                type="button"
+                                class="scenario__header"
+                            >
+                                <span>
+                                    Сценарій ${index + 1}
+                                </span>
+
+                                <span class="scenario__arrow">
+                                    ↓
+                                </span>
+                            </button>
+
+                            <div class="scenario__body">
+                                <p>
+                                    ${escapeHtml(script.scenario || "")}
+                                </p>
+
+                                <div class="scenario-meta">
+                                    <div class="scenario-meta__item">
+                                        <span class="scenario-meta__label">
+                                            Інвентар
+                                        </span>
+
+                                        <span class="scenario-meta__value">
+                                            ${escapeHtml(script.equipment || "—")}
+                                        </span>
+                                    </div>
+
+                                    <div class="scenario-meta__item">
+                                        <span class="scenario-meta__label">
+                                            Актори
+                                        </span>
+
+                                        <span class="scenario-meta__value">
+                                            ${escapeHtml(script.actors || "—")}
+                                        </span>
+                                    </div>
+
+                                    <div class="scenario-meta__item">
+                                        <span class="scenario-meta__label">
+                                            Пристрій
+                                        </span>
+
+                                        <span class="scenario-meta__value">
+                                            ${escapeHtml(script.device || "—")}
+                                        </span>
+                                    </div>
+
+                                    <div class="scenario-meta__item">
+                                        <span class="scenario-meta__label">
+                                            Локація
+                                        </span>
+
+                                        <span class="scenario-meta__value">
+                                            ${escapeHtml(script.location || "—")}
+                                        </span>
+                                    </div>
+
+                                    <div class="scenario-meta__item">
+                                        <span class="scenario-meta__label">
+                                            Складність
+                                        </span>
+
+                                        <span
+                                            class="difficulty-badge difficulty-badge--${escapeHtml(script.difficulty || "none")}"
+                                        >
+                                            ${escapeHtml(script.difficulty || "—")}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `
+                )
+                .join("");
+        }
+
+        $("#ideaDetailsView").html(`
+            <h2 class="modal__title">
+                ${escapeHtml(idea.title)}
+            </h2>
+
+            ${videoHtml}
+
+            <div class="scripts-section">
+                <h3>
+                    Сценарії
+                </h3>
+
+                <div class="scenarios-list">
+                    ${scriptsHtml}
+                </div>
+            </div>
+
+            <div class="idea-details__actions">
+                <button
+                    type="button"
+                    class="button button--danger"
+                    id="deleteIdeaBtn"
+                >
+                    Видалити
+                </button>
+
+                <button
+                    type="button"
+                    class="button button--primary"
+                    id="editIdeaBtn"
+                >
+                    Редагувати
+                </button>
+            </div>
+        `);
+    }
+
+    $(document).on(
+        "click",
+        ".scenario__header",
+        function () {
+            const $scenario =
+                $(this).closest(
+                    ".scenario"
+                );
+
+            $scenario.toggleClass(
+                "is-open"
+            );
+
+            $scenario
+                .find(
+                    ".scenario__body"
+                )
+                .stop(true, true)
+                .slideToggle(180);
+        }
+    );
+
+    $(document).on(
+        "click",
+        "#editIdeaBtn",
+        function () {
+            const idea =
+                findIdea(
+                    state.currentIdeaId
+                );
+
+            if (!idea) {
+                return;
+            }
+
+            renderEditIdea(idea);
+        }
+    );
 
     function renderEditIdea(idea) {
-        const $edit = $("#ideaEditView");
-        $("#ideaDetailsView").prop("hidden", true);
-        $edit.prop("hidden", false).html(`
+        const $edit =
+            $("#ideaEditView");
+
+        $("#ideaDetailsView").prop(
+            "hidden",
+            true
+        );
+
+        $edit
+            .prop(
+                "hidden",
+                false
+            )
+            .html(`
                 <h2 class="modal__title">
-                    Редактирование
+                    Редагування
                 </h2>
+
                 <form id="editIdeaForm">
                     <div class="form-field">
                         <label>
-                            Название идеи
+                            Назва ідеї
                         </label>
+
                         <input
                             name="title"
                             type="text"
                             required
                         >
                     </div>
+
                     <div class="form-field">
                         <label>
-                            Ссылка на референс
+                            Посилання на референс
                         </label>
+
                         <input
                             name="url"
                             type="url"
-                            placeholder="Instagram, TikTok или YouTube"
+                            placeholder="Instagram, TikTok або YouTube"
                         >
                     </div>
+
                     <div class="scripts-section">
                         <div class="scripts-section__header">
                             <div>
                                 <h3>
-                                    Сценарии
+                                    Сценарії
                                 </h3>
+
                                 <p>
-                                    Добавляй и удаляй сценарии.
+                                    Додавай і видаляй сценарії.
                                 </p>
                             </div>
+
                             <button
                                 type="button"
                                 class="button button--outline button--small add-script"
                             >
-                                + Сценарий
+                                + Сценарій
                             </button>
                         </div>
+
                         <div
                             data-scripts-editor
                             class="scripts-editor"
                         ></div>
                     </div>
+
                     <div
                         class="form-error"
                         id="editIdeaError"
                     ></div>
+
                     <div class="modal__footer">
                         <button
                             type="button"
                             class="button button--secondary"
                             id="cancelEditBtn"
                         >
-                            Отмена
+                            Скасувати
                         </button>
+
                         <button
                             type="submit"
                             class="button button--primary"
                         >
-                            Обновить
+                            Оновити
                         </button>
                     </div>
                 </form>
-            `
-        );
-        const $form = $("#editIdeaForm");
-        $form.find('[name="title"]').val(idea.title || "");
-        $form.find('[name="url"]').val(idea.url_origin || idea.url || "");
-        const $editor = $form.find("[data-scripts-editor]");
+            `);
+
+        const $form =
+            $("#editIdeaForm");
+
+        $form
+            .find('[name="title"]')
+            .val(
+                idea.title || ""
+            );
+
+        $form
+            .find('[name="url"]')
+            .val(
+                idea.url_origin ||
+                idea.url ||
+                ""
+            );
+
+        const $editor =
+            $form.find(
+                "[data-scripts-editor]"
+            );
+
         $editor.empty();
-        (idea.scripts || []).forEach(function (script) { addScript($editor, script); });
+
+        (idea.scripts || []).forEach(
+            function (script) {
+                addScript(
+                    $editor,
+                    script
+                );
+            }
+        );
+
         if (!(idea.scripts || []).length) {
             addScript($editor);
         }
     }
 
-    $(document).on("click", "#cancelEditBtn", function () {
-        const idea = findIdea(state.currentIdeaId);
-        if (!idea) return;
-        $("#ideaEditView").prop("hidden", true).empty();
-        $("#ideaDetailsView").prop("hidden", false);
-        renderIdeaDetails(idea);
-    });
+    $(document).on(
+        "click",
+        "#cancelEditBtn",
+        function () {
+            const idea =
+                findIdea(
+                    state.currentIdeaId
+                );
 
-    $(document).on("submit", "#editIdeaForm", function (event) {
-        event.preventDefault();
-        const id = state.currentIdeaId;
-        const $form = $(this);
-        const payload = {
-            title: $form.find('[name="title"]').val().trim(),
-            url_origin: $form.find('[name="url"]').val().trim(),
-            scripts: collectScripts($form.find("[data-scripts-editor]")),
-        };
-        $("#editIdeaError").text("");
-
-        authorizedRequest({
-            url: `/idea/update/${id}`,
-            method: "PATCH",
-            data: payload,
-        }).then(function (updatedIdea) {
-            const index = state.ideas.findIndex((item) => item._id === id);
-            if (index !== -1) {
-                state.ideas[index] = updatedIdea;
+            if (!idea) {
+                return;
             }
-            renderIdeas();
-            $("#ideaEditView").prop("hidden", true).empty();
-            $("#ideaDetailsView").prop("hidden", false);
-            renderIdeaDetails(updatedIdea);
-        }).catch(function (xhr) {
-            $("#editIdeaError").text(getErrorMessage(xhr));
-        });
-    });
 
-    $(document).on("click", "#deleteIdeaBtn", function () {
-        state.deleteIdeaId = state.currentIdeaId;
-        showModal("#deleteModal");
-    });
+            $("#ideaEditView")
+                .prop(
+                    "hidden",
+                    true
+                )
+                .empty();
 
-    $("#cancelDeleteBtn").on("click", function () {
-        state.deleteIdeaId = null;
-        closeModal("#deleteModal");
-    });
+            $("#ideaDetailsView").prop(
+                "hidden",
+                false
+            );
 
-    $("#confirmDeleteBtn").on("click", function () {
-        const id = state.deleteIdeaId;
-        if (!id) return;
-        const $button = $(this);
-        $button.prop("disabled", true).text("Удаляем...");
-
-        authorizedRequest({
-            url: `/idea/delete/${id}`,
-            method: "DELETE",
-        }).then(function () {
-            state.ideas = state.ideas.filter((item) => item._id !== id);
-            state.deleteIdeaId = null;
-            state.currentIdeaId = null;
-            closeModal("#deleteModal");
-            closeModal("#detailsModal");
-            renderIdeas();
-        }).catch(function (xhr) {
-            alert(getErrorMessage(xhr));
-        }).always(function () {
-            $button.prop("disabled", false).text("Удалить");
-        });
-    });
-
-    $(document).on("click", "[data-close-modal]", function () {
-        const $modal = $(this).closest(".modal");
-        if ($modal.hasClass("modal--locked")) {
-            return;
+            renderIdeaDetails(idea);
         }
-        closeModal(`#${$modal.attr("id")}`);
-    });
+    );
 
-    $(document).on("keydown", function (event) {
-        if (event.key !== "Escape") {
-            return;
+    $(document).on(
+        "submit",
+        "#editIdeaForm",
+        function (event) {
+            event.preventDefault();
+
+            const id =
+                state.currentIdeaId;
+
+            const $form =
+                $(this);
+
+            const payload = {
+                title:
+                    $form
+                        .find(
+                            '[name="title"]'
+                        )
+                        .val()
+                        .trim(),
+
+                url_origin:
+                    $form
+                        .find(
+                            '[name="url"]'
+                        )
+                        .val()
+                        .trim(),
+
+                scripts:
+                    collectScripts(
+                        $form.find(
+                            "[data-scripts-editor]"
+                        )
+                    ),
+            };
+
+            $("#editIdeaError").text("");
+
+            authorizedRequest({
+                url:
+                    `/idea/update/${id}`,
+                method: "PATCH",
+                data: payload,
+            })
+                .then(function (updatedIdea) {
+                    const index =
+                        state.ideas.findIndex(
+                            (item) =>
+                                item._id === id
+                        );
+
+                    if (index !== -1) {
+                        state.ideas[index] =
+                            updatedIdea;
+                    }
+
+                    renderIdeas();
+
+                    $("#ideaEditView")
+                        .prop(
+                            "hidden",
+                            true
+                        )
+                        .empty();
+
+                    $("#ideaDetailsView").prop(
+                        "hidden",
+                        false
+                    );
+
+                    renderIdeaDetails(
+                        updatedIdea
+                    );
+                })
+                .catch(function (xhr) {
+                    $("#editIdeaError").text(
+                        getErrorMessage(xhr)
+                    );
+                });
         }
-        const $modal = $(".modal.is-open").last();
-        if (!$modal.length || $modal.hasClass("modal--locked")) {
-            return;
+    );
+
+    $(document).on(
+        "click",
+        "#deleteIdeaBtn",
+        function () {
+            state.deleteIdeaId =
+                state.currentIdeaId;
+
+            showModal(
+                "#deleteModal"
+            );
         }
-        closeModal(`#${$modal.attr("id")}`);
-    });
+    );
+
+    $("#cancelDeleteBtn").on(
+        "click",
+        function () {
+            state.deleteIdeaId =
+                null;
+
+            closeModal(
+                "#deleteModal"
+            );
+        }
+    );
+
+    $("#confirmDeleteBtn").on(
+        "click",
+        function () {
+            const id =
+                state.deleteIdeaId;
+
+            if (!id) {
+                return;
+            }
+
+            const $button =
+                $(this);
+
+            $button
+                .prop(
+                    "disabled",
+                    true
+                )
+                .text(
+                    "Видаляємо..."
+                );
+
+            authorizedRequest({
+                url:
+                    `/idea/delete/${id}`,
+                method:
+                    "DELETE",
+            })
+                .then(function () {
+                    state.ideas =
+                        state.ideas.filter(
+                            (item) =>
+                                item._id !== id
+                        );
+
+                    state.deleteIdeaId =
+                        null;
+
+                    state.currentIdeaId =
+                        null;
+
+                    closeModal(
+                        "#deleteModal"
+                    );
+
+                    closeModal(
+                        "#detailsModal"
+                    );
+
+                    renderIdeas();
+                })
+                .catch(function (xhr) {
+                    alert(
+                        getErrorMessage(xhr)
+                    );
+                })
+                .always(function () {
+                    $button
+                        .prop(
+                            "disabled",
+                            false
+                        )
+                        .text(
+                            "Видалити"
+                        );
+                });
+        }
+    );
+
+    $(document).on(
+        "click",
+        "[data-close-modal]",
+        function () {
+            const $modal =
+                $(this).closest(
+                    ".modal"
+                );
+
+            if (
+                $modal.hasClass(
+                    "modal--locked"
+                )
+            ) {
+                return;
+            }
+
+            closeModal(
+                `#${$modal.attr("id")}`
+            );
+        }
+    );
+
+    $(document).on(
+        "keydown",
+        function (event) {
+            if (
+                event.key !==
+                "Escape"
+            ) {
+                return;
+            }
+
+            const $modal =
+                $(".modal.is-open").last();
+
+            if (
+                !$modal.length ||
+                $modal.hasClass(
+                    "modal--locked"
+                )
+            ) {
+                return;
+            }
+
+            closeModal(
+                `#${$modal.attr("id")}`
+            );
+        }
+    );
 
     let filtersTimeout;
+
     function applyFiltersDelayed() {
-        clearTimeout(filtersTimeout);
-        filtersTimeout = setTimeout(function () {
-            loadIdeas();
-        }, 300);
+        clearTimeout(
+            filtersTimeout
+        );
+
+        filtersTimeout =
+            setTimeout(
+                function () {
+                    loadIdeas();
+                },
+                300
+            );
     }
 
-    $("#searchInput").on("input", applyFiltersDelayed);
-    $("#locationFilter").on("input", applyFiltersDelayed);
-    $("#difficultyFilter").on("change", function () { loadIdeas(); });
-    $("#resetFilters").on("click", function () {
-        $("#searchInput").val("");
-        $("#locationFilter").val("");
-        $("#difficultyFilter").val("");
-        loadIdeas();
-    });
+    $("#searchInput").on(
+        "input",
+        applyFiltersDelayed
+    );
+
+    $("#locationFilter").on(
+        "input",
+        applyFiltersDelayed
+    );
+
+    $("#difficultyFilter").on(
+        "change",
+        function () {
+            loadIdeas();
+        }
+    );
+
+    $("#resetFilters").on(
+        "click",
+        function () {
+            $("#searchInput").val("");
+            $("#locationFilter").val("");
+            $("#difficultyFilter").val("");
+
+            loadIdeas();
+        }
+    );
 
     function initialize() {
         if (!state.token) {
-            refreshAccessToken().then(function () {
-                setAuthenticated(true);
-                loadIdeas();
-            }).catch(function () {
-                saveToken("");
-                setAuthenticated(false);
-            });
+            refreshAccessToken()
+                .then(function () {
+                    setAuthenticated(true);
+
+                    loadIdeas();
+                })
+                .catch(function () {
+                    saveToken("");
+
+                    setAuthenticated(false);
+                });
+
             return;
         }
+
         setAuthenticated(true);
+
         loadIdeas();
     }
-    
+
     initialize();
 });
