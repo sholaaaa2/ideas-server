@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { AppError } from "../../helpers/index.js";
 import TokenService from "../token/token-service.js";
+import TokenModel from "../token/token-model.js";
 import UserModel from "./user-model.js";
 
 class UserService {
@@ -24,6 +25,10 @@ class UserService {
         if (!oldToken) throw new AppError("Not authorized", 401);
 
         const { _id, name } = TokenService.verifyToken(oldToken, () => { throw new AppError("Not authorized", 401); });
+
+        const storedToken = await TokenModel.findOne({ userId: _id, token: oldToken });
+        if (!storedToken) throw new AppError("Not authorized", 401);
+
         const existingUser = await UserModel.findById(_id);
         if (!existingUser) throw new AppError("User not found", 401);
 

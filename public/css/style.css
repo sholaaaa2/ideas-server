@@ -217,8 +217,8 @@ body.modal-open {
     justify-content: center;
     flex-direction: column;
     gap: 7px;
-    color: #9396a7;
-    background: linear-gradient(135deg, #f0f1f6, #e8e9ef);
+    color: #fff;
+    background: linear-gradient(135deg, #bec6f1, #7b88d8);
 }
 
 .idea-card__placeholder-icon {
@@ -803,4 +803,81 @@ select:focus {
 
 .original-link:active {
     transform: scale(0.98);
+}
+
+/* Ideas count, scenario counter and JS pagination */
+.ideas-count {
+    margin-top: 8px !important;
+    color: var(--text) !important;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.idea-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: -8px 0 14px;
+    color: var(--text-soft);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.idea-card__scenario-count {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 32px;
+    color: var(--primary);
+    border: 1px solid rgba(87, 95, 207, 0.2);
+    border-radius: 50%;
+    background: var(--primary-soft);
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 30px;
+}
+
+.pagination__button {
+    min-width: 40px;
+    height: 40px;
+    padding: 0 11px;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    font-weight: 800;
+    transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
+}
+
+.pagination__button:hover:not(:disabled):not(.is-active) {
+    border-color: rgba(87, 95, 207, 0.3);
+    background: var(--primary-soft);
+}
+
+.pagination__button.is-active {
+    color: #fff;
+    border-color: var(--primary);
+    background: var(--primary);
+}
+
+.pagination__button:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
+.pagination__ellipsis {
+    min-width: 22px;
+    color: var(--text-soft);
+    text-align: center;
+    font-weight: 800;
 }

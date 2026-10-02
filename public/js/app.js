@@ -10,7 +10,10 @@ $(function () {
         ideas: [],
         currentIdeaId: null,
         deleteIdeaId: null,
-        refreshing: false,
+        refreshPromise: null,
+        page: Math.max(1, Number(localStorage.getItem("ideas_page")) || 1),
+        limit: 12,
+        totalIdeas: 0,
     };
 
     function escapeHtml(value) {
@@ -28,6 +31,32 @@ $(function () {
         if (!$(".modal.is-open").length) {
             $("body").removeClass("modal-open");
         }
+    }
+
+    function closeAllModals() {
+        $(".modal.is-open")
+            .removeClass("is-open")
+            .attr("aria-hidden", "true");
+        $("body").removeClass("modal-open");
+    }
+
+    function forceLogin() {
+        saveToken("");
+        state.ideas = [];
+        state.currentIdeaId = null;
+        state.deleteIdeaId = null;
+        closeAllModals();
+        $("#ideasGrid").empty();
+        setAuthenticated(false);
+    }
+
+    function normalizeText(value) {
+        return String(value ?? "").trim();
+    }
+
+    function savePage(page) {
+        state.page = Math.max(1, Number(page) || 1);
+        localStorage.setItem("ideas_page", String(state.page));
     }
 
     function setAuthenticated(authenticated) {
@@ -92,39 +121,64 @@ $(function () {
     }
 
     function refreshAccessToken() {
-        return request({
+        if (state.refreshPromise) {
+            return state.refreshPromise;
+        }
+
+        const deferred = $.Deferred();
+        state.refreshPromise = deferred.promise();
+
+        request({
             url: "/user/refresh",
             method: "POST",
             auth: false,
-        }).then(function (response) {
-            const token = response?.data?.token;
+        })
+            .then(function (response) {
+                const token = response?.data?.token;
 
-            if (!token) {
-                return $.Deferred().reject().promise();
-            }
+                if (!token) {
+                    deferred.reject({ status: 401 });
+                    return;
+                }
 
-            saveToken(token);
+                saveToken(token);
+                deferred.resolve(token);
+            })
+            .catch(function (xhr) {
+                deferred.reject(xhr);
+            })
+            .always(function () {
+                state.refreshPromise = null;
+            });
 
-            return token;
-        });
+        return deferred.promise();
     }
 
     function authorizedRequest(options) {
-        return request(options).catch(function (xhr) {
-            if (xhr.status !== 401) {
+        const requestOptions = $.extend(true, {}, options);
+
+        return request(requestOptions).catch(function (xhr) {
+            if (xhr.status !== 401 || requestOptions._retried) {
                 return $.Deferred().reject(xhr).promise();
             }
 
-            return refreshAccessToken()
-                .then(function () {
-                    return request(options);
-                })
-                .catch(function () {
-                    saveToken("");
-                    setAuthenticated(false);
+            requestOptions._retried = true;
 
-                    return $.Deferred().reject(xhr).promise();
-                });
+            return refreshAccessToken().then(
+                function () {
+                    return request(requestOptions).catch(function (retryXhr) {
+                        if (retryXhr.status === 401) {
+                            forceLogin();
+                        }
+
+                        return $.Deferred().reject(retryXhr).promise();
+                    });
+                },
+                function (refreshError) {
+                    forceLogin();
+                    return $.Deferred().reject(refreshError || xhr).promise();
+                }
+            );
         });
     }
 
@@ -169,13 +223,7 @@ $(function () {
             method: "POST",
             auth: false,
         }).always(function () {
-            saveToken("");
-
-            state.ideas = [];
-
-            $("#ideasGrid").empty();
-
-            setAuthenticated(false);
+            forceLogin();
         });
     });
 
@@ -186,7 +234,8 @@ $(function () {
 
         const params = new URLSearchParams();
 
-        params.set("limit", "100");
+        params.set("page", String(state.page));
+        params.set("limit", String(state.limit));
 
         if (search) {
             params.set("search", search);
@@ -200,14 +249,23 @@ $(function () {
             params.set("difficulty", difficulty);
         }
 
-        authorizedRequest({
+        return authorizedRequest({
             url: `/idea/get?${params.toString()}`,
             method: "GET",
         })
             .then(function (response) {
-                state.ideas = response.objects || [];
+                state.totalIdeas = Number(response.total) || 0;
 
+                const totalPages = Math.max(1, Math.ceil(state.totalIdeas / state.limit));
+                if (state.page > totalPages && state.totalIdeas > 0) {
+                    savePage(totalPages);
+                    return loadIdeas();
+                }
+
+                state.ideas = response.objects || [];
                 renderIdeas();
+                renderPagination();
+                renderIdeasCount();
             })
             .catch(function (xhr) {
                 if (xhr.status !== 401) {
@@ -268,6 +326,25 @@ $(function () {
                 idea.title || "Без назви"
             );
 
+            const scenariosCount = Array.isArray(idea.scripts)
+                ? idea.scripts.length
+                : 0;
+
+            const $meta = $("<div>", {
+                class: "idea-card__meta",
+            }).append(
+                $("<span>", {
+                    class: "idea-card__scenario-label",
+                    text: "Сценарії",
+                }),
+                $("<span>", {
+                    class: "idea-card__scenario-count",
+                    text: scenariosCount,
+                    title: `Сценаріїв: ${scenariosCount}`,
+                    "aria-label": `Сценаріїв: ${scenariosCount}`,
+                })
+            );
+
             const $button = $("<button>", {
                 class: "button button--primary",
                 type: "button",
@@ -279,6 +356,7 @@ $(function () {
 
             $body.append(
                 $title,
+                $meta,
                 $button
             );
 
@@ -290,6 +368,70 @@ $(function () {
             $grid.append($card);
         });
     }
+
+    function renderIdeasCount() {
+        $("#ideasCount").text(`Усього ідей: ${state.totalIdeas}`);
+    }
+
+    function renderPagination() {
+        const $pagination = $("#ideasPagination");
+        const totalPages = Math.ceil(state.totalIdeas / state.limit);
+
+        $pagination.empty().prop("hidden", totalPages <= 1);
+
+        if (totalPages <= 1) {
+            return;
+        }
+
+        const addButton = function (label, page, options = {}) {
+            const $button = $("<button>", {
+                type: "button",
+                class: `pagination__button${options.active ? " is-active" : ""}`,
+                text: label,
+                disabled: Boolean(options.disabled),
+            });
+
+            if (!options.disabled && !options.active) {
+                $button.attr("data-page", page);
+            }
+
+            $pagination.append($button);
+        };
+
+        addButton("←", state.page - 1, { disabled: state.page <= 1 });
+
+        const visiblePages = new Set([1, totalPages, state.page - 1, state.page, state.page + 1]);
+        let previousPage = 0;
+
+        [...visiblePages]
+            .filter((page) => page >= 1 && page <= totalPages)
+            .sort((a, b) => a - b)
+            .forEach(function (page) {
+                if (previousPage && page - previousPage > 1) {
+                    $pagination.append($("<span>", {
+                        class: "pagination__ellipsis",
+                        text: "…",
+                    }));
+                }
+
+                addButton(String(page), page, { active: page === state.page });
+                previousPage = page;
+            });
+
+        addButton("→", state.page + 1, { disabled: state.page >= totalPages });
+    }
+
+    $(document).on("click", "[data-page]", function () {
+        const page = Number($(this).attr("data-page"));
+        if (!page || page === state.page) {
+            return;
+        }
+
+        savePage(page);
+        loadIdeas().then(function () {
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+    });
 
     function createScriptEditor(script = {}, index = 0) {
         const $block = $("<div>", {
@@ -396,23 +538,23 @@ $(function () {
 
         $block
             .find('[data-field="scenario"]')
-            .val(script.scenario || "");
+            .val(normalizeText(script.scenario));
 
         $block
             .find('[data-field="equipment"]')
-            .val(script.equipment || "");
+            .val(normalizeText(script.equipment));
 
         $block
             .find('[data-field="actors"]')
-            .val(script.actors || "");
+            .val(normalizeText(script.actors));
 
         $block
             .find('[data-field="device"]')
-            .val(script.device || "");
+            .val(normalizeText(script.device));
 
         $block
             .find('[data-field="location"]')
-            .val(script.location || "");
+            .val(normalizeText(script.location));
 
         $block
             .find('[data-field="difficulty"]')
@@ -626,6 +768,7 @@ $(function () {
                         "#ideaModal"
                     );
 
+                    savePage(1);
                     loadIdeas();
                 })
                 .catch(function (xhr) {
@@ -752,10 +895,7 @@ $(function () {
                             </button>
 
                             <div class="scenario__body">
-                                <p>
-                                    ${escapeHtml(script.scenario || "")}
-                                </p>
-
+                                <p>${escapeHtml(normalizeText(script.scenario))}</p>
                                 <div class="scenario-meta">
                                     <div class="scenario-meta__item">
                                         <span class="scenario-meta__label">
@@ -763,7 +903,7 @@ $(function () {
                                         </span>
 
                                         <span class="scenario-meta__value">
-                                            ${escapeHtml(script.equipment || "—")}
+                                            ${escapeHtml(normalizeText(script.equipment) || "—")}
                                         </span>
                                     </div>
 
@@ -773,7 +913,7 @@ $(function () {
                                         </span>
 
                                         <span class="scenario-meta__value">
-                                            ${escapeHtml(script.actors || "—")}
+                                            ${escapeHtml(normalizeText(script.actors) || "—")}
                                         </span>
                                     </div>
 
@@ -783,7 +923,7 @@ $(function () {
                                         </span>
 
                                         <span class="scenario-meta__value">
-                                            ${escapeHtml(script.device || "—")}
+                                            ${escapeHtml(normalizeText(script.device) || "—")}
                                         </span>
                                     </div>
 
@@ -793,7 +933,7 @@ $(function () {
                                         </span>
 
                                         <span class="scenario-meta__value">
-                                            ${escapeHtml(script.location || "—")}
+                                            ${escapeHtml(normalizeText(script.location) || "—")}
                                         </span>
                                     </div>
 
@@ -1190,27 +1330,13 @@ $(function () {
                     "DELETE",
             })
                 .then(function () {
-                    state.ideas =
-                        state.ideas.filter(
-                            (item) =>
-                                item._id !== id
-                        );
+                    state.deleteIdeaId = null;
+                    state.currentIdeaId = null;
 
-                    state.deleteIdeaId =
-                        null;
+                    closeModal("#deleteModal");
+                    closeModal("#detailsModal");
 
-                    state.currentIdeaId =
-                        null;
-
-                    closeModal(
-                        "#deleteModal"
-                    );
-
-                    closeModal(
-                        "#detailsModal"
-                    );
-
-                    renderIdeas();
+                    loadIdeas();
                 })
                 .catch(function (xhr) {
                     alert(
@@ -1291,6 +1417,7 @@ $(function () {
         filtersTimeout =
             setTimeout(
                 function () {
+                    savePage(1);
                     loadIdeas();
                 },
                 300
@@ -1310,6 +1437,7 @@ $(function () {
     $("#difficultyFilter").on(
         "change",
         function () {
+            savePage(1);
             loadIdeas();
         }
     );
@@ -1321,6 +1449,7 @@ $(function () {
             $("#locationFilter").val("");
             $("#difficultyFilter").val("");
 
+            savePage(1);
             loadIdeas();
         }
     );
